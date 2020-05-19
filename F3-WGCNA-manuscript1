@@ -1,0 +1,249 @@
+#this is the WGCNA for the first manuscript of F3
+
+setwd('~/Desktop/F3-all/WGCNA-F3/')
+library('DESeq2')
+library('pheatmap')
+library('RColorBrewer')
+library('ggplot2')
+library('WGCNA')
+
+options(stringsAsFactors = FALSE)
+
+x<-read.csv('../f3_all-apr19.txt', row.names="Geneid", header=T, sep='\t')
+counts<-x [which (x$Length>200),] #only select fragments larger than 200bp (there are many small ones )
+counts=counts[ , order(names(counts))]
+counts$filtr<-apply(counts, 1, function(k) mean(k > 10)) > 0.8
+counts<-counts[!(counts$filtr=="FALSE"),] # it goes down to 13152 genes
+
+#This is the code to only analyze the 50% with the highest variation
+#counts$variance = apply(counts, 1, var)
+#counts2 = counts[counts$variance >= quantile(counts$variance, c(.50)), ] #50% most variable genes
+#counts2$variance <- NULL
+#counts=counts2
+
+counts$Length=NULL
+counts$filtr=NULL
+#outlier removal
+counts$A17=NULL 
+counts$sA54=NULL
+
+#removing all acute samples and +3C samples
+counts <- counts[,!grepl("aAB", colnames(counts))]
+counts <- counts[,!grepl("aAC", colnames(counts))]
+counts <- counts[,!grepl("LBAtaB", colnames(counts))]
+counts <- counts[,!grepl("LCAtaC", colnames(counts))]
+counts <- counts[,!grepl("sAaB", colnames(counts))]
+counts <- counts[,!grepl("ttBaC", colnames(counts))]
+counts <- counts[,!grepl("C", colnames(counts))]
+counts <- counts[,!grepl("LBCt", colnames(counts))]
+counts <- counts[,!grepl("LCAt", colnames(counts))]
+counts <- counts[,!grepl("sC", colnames(counts))]
+counts <- counts[,!grepl("tSC", colnames(counts))]
+
+counts=counts[,order(names(counts))]
+countdata<-as.matrix(counts)
+colnames(counts)
+
+#countdata<-apply(counts,1,function(x) {all(x>0)})
+#conditions for LRT
+condition<-factor(c(rep('A',7), rep('B',8), rep('LABt',6), rep('LABtdA',8), rep('LBAt',6), rep('sA',7), rep('ttB',5))) #each treatment independently 
+coldata <-data.frame(row.names=colnames(countdata), condition)
+
+totalCounts=colSums(countdata) 
+totalCounts
+
+min(totalCounts) #25733312
+max(totalCounts) #43157896
+mean(totalCounts) #33318079
+
+dds<-DESeqDataSetFromMatrix (countdata, coldata, design= ~condition)
+dds<-dds[rowSums(counts(dds))>0,]
+# apply(counts(dds), 1, function(k) mean(k > 10)) > 0.8
+summary(dds) #13152
+dds.c <- DESeq(dds, test="LRT",full=~condition, reduced=~1)
+res.c<-results(dds.c)
+res.c
+res.c<-res.c[order(res.c$padj),]
+table(res.c$padj<0.01)
+#FALSE  TRUE 
+#12257   890 
+
+#to obtain variance stabilized data folow: 
+head(res.c)
+vsd.c=getVarianceStabilizedData(dds.c)
+head(vsd.c)
+write.csv(vsd.c, file="F3-WGCNA-variancestabilized-Oct19.csv", quote=FALSE)
+
+# Check that the data has the correct format for many functions operating on multiple sets:
+#WGCNA THE DATA NEEDS TO BE TRANSPOSED to make dendrogram
+
+gsg = goodSamplesGenes(vsd.c, verbose = 5);
+gsg$allOK
+
+dim(vsd.c)
+xx=as.data.frame(t(vsd.c)) #The stabilized data has to be transposed! 
+dim(xx)
+rownames(xx) #make sure the rownames are actually 
+
+sampleTree = hclust(dist(xx), method = "average");
+# Plot the sample tree: Open a graphic output window of size 12 by 9 inches
+# The user should change the dimensions if the window is too large or too small.
+sizeGrWindow(12,9)
+#pdf(file = "Plots/sampleClustering.pdf", width = 12, height = 9);
+par(cex = 0.6);
+par(mar = c(0,4,2,0))
+#plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5,cex.axis = 1.5, cex.main = 2)
+plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="")
+
+traitData = read.csv("F3-wgcna-traits.csv",header=TRUE);
+dim(traitData)
+names(traitData)
+
+f3samples = rownames(xx);
+traitRows = match(f3samples, traitData$Individuals);
+datTraits = traitData[traitRows, -1];
+rownames(datTraits) = traitData[traitRows, 1];
+collectGarbage();
+
+#The second tree that includes the heatmap will not work here, because it should be numbers, not just categories like we have
+#store the data in an R function 
+
+save(xx, datTraits, file = "F3-wgcna-step1.RData")
+
+##To Find blocks of modules 8, use the data that is not transposed 
+# Choose a set of soft-thresholding powers
+
+lnames= load(file="F3-wgcna-step1.RData")
+
+powers = c(c(1:10), seq(from = 12, to=20, by=2))
+
+# Call the network topology analysis function
+sft = pickSoftThreshold(xx, powerVector = powers, verbose = 5, networkType="signed")
+# Plot the results:
+sizeGrWindow(9, 5)
+par(mfrow = c(1,2));
+cex1 = 0.9;
+# Scale-free topology fit index as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
+     main = paste("Scale independence"));
+text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     labels=powers,cex=cex1,col="red");
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.90,col="red")
+# Mean connectivity as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+     xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
+     main = paste("Mean connectivity"))
+text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+
+#the curve shows that the correct power to use is 6
+
+softPower = 6;
+adjacency = adjacency(xx, power = softPower, type='signed');
+TOM = TOMsimilarity(adjacency, TOMType='signed');
+dissTOM = 1-TOM
+
+# Call the hierarchical clustering function
+geneTree = hclust(as.dist(dissTOM), method = "average");
+# Plot the resulting clustering tree (dendrogram)
+#sizeGrWindow(12,9)
+#pdf(file=Dendrogram_signed_BM10.pdf, width=20, height=20)
+plot(geneTree, xlab="", sub="", main = "Gene clustering on TOM-based dissimilarity",
+     labels = FALSE, hang = 0.04);
+#dev.off()
+minModuleSize = 30;
+# Module identification using dynamic tree cut:
+dynamicMods = cutreeDynamic(dendro = geneTree, distM = dissTOM,
+                            deepSplit = 2, pamRespectsDendro = FALSE,
+                            minClusterSize = minModuleSize);
+table(dynamicMods)
+#dynamicMods
+#1    2    3    4    5    6    7 
+#6112 5698  587  332  223  105   95 
+
+# Convert numeric lables into colors
+dynamicColors = labels2colors(dynamicMods)
+table(dynamicColors)
+#black      blue     brown     green       red turquoise    yellow 
+#95      5698       587       223       105      6112       332 
+
+# Plot the dendrogram and colors underneath
+#sizeGrWindow(8,6)
+#pdf(file=Dendrogram_signed_BM10_colors.pdf, width=20, height=20)
+plotDendroAndColors(geneTree, dynamicColors, "Dynamic Tree Cut",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05,
+                    main = "Gene dendrogram and module colors")
+#dev.off()
+
+# Calculate eigengenes
+MEList = moduleEigengenes(datExpr, colors = dynamicColors)
+MEs = MEList$eigengenes
+# Calculate dissimilarity of module eigengenes
+MEDiss = 1-cor(MEs);
+# Cluster module eigengenes
+METree = hclust(as.dist(MEDiss), method = "average");
+# Plot the result
+#sizeGrWindow(7, 6)
+#pdf(file=ClusteringEigengenes.pdf, width=20, height=20)
+plot(METree, main = "Clustering of module eigengenes",
+     xlab = "", sub = "")
+#dev.off()
+
+MEDissThres = 0.2 #decided to choose this one instead of 0.25
+# Plot the cut line into the dendrogram
+abline(h=MEDissThres, col = "red")
+# Call an automatic merging function
+merge = mergeCloseModules(datExpr, dynamicColors, cutHeight = MEDissThres, verbose = 3)
+# The merged module colors
+mergedColors = merge$colors;
+# Eigengenes of the new merged modules:
+mergedMEs = merge$newMEs;
+
+#sizeGrWindow(12, 9)
+#pdf(file = "DendroAndColors_sft6_bm10.pdf", wi = 9, he = 6)
+plotDendroAndColors(geneTree, cbind(dynamicColors, mergedColors),
+                    c("Dynamic Tree Cut", "Merged dynamic"),
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+#dev.off()
+
+# Rename to moduleColors
+moduleColors = mergedColors
+# Construct numerical labels corresponding to the colors
+colorOrder = c("grey", standardColors(50));
+moduleLabels = match(moduleColors, colorOrder)-
+  
+  
+
+#THIS IS THE AUTOMATIC ONE
+#net = blockwiseModules(xx, power = 5, corType="bicor",
+#                       TOMType = "unsigned", minModuleSize = 50,
+#                       reassignThreshold = 0, mergeCutHeight = 0.3,
+#                       numericLabels = TRUE,
+#                       saveTOMs = TRUE,
+#                       saveTOMFileBase = "F3-thermaltest",
+#                       verbose = 5, maxBlockSize = 5000)
+#names(net)
+
+moduleLabels = net$colors
+moduleColors = labels2colors(net$colors)
+consMEs = net$MEs;
+consTree = net$dendrograms[[1]]
+
+sizeGrWindow(12, 9)
+# Convert labels to colors for plotting
+mergedColors = labels2colors(net$colors)
+# Plot the dendrogram and the module colors underneath
+plotDendroAndColors(net$dendrograms[[1]], mergedColors[net$blockGenes[[1]]],
+                    "Module colors",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+
+save(consMEs, moduleLabels, moduleColors, geneTree, file = "Consensus-NetworkConstruction-auto.RData")
+
+exprSize = checkSets(multiExpr)
+nSets = exprSize$nSets
+
+
