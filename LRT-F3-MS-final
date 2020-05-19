@@ -1,0 +1,226 @@
+#This script was used to determine the effect of developmental temperatures of 
+#grandparents/parents, reproductive temperature or developmental temperature of 
+#F3 juveniles had on liver gene expression. 
+
+library('DESeq2')
+library('pheatmap')
+library('RColorBrewer')
+library('ggplot2')
+
+counts<-read.csv('../../rawfiles/f3_counts1-genome-edited-Apr18.txt', row.names="Geneid", header=T, sep='\t')
+#this file was created using the genome as reference, eliminating fragments shorter than 200bp total genes=33604
+#Removal of outliers 
+counts$A.17=NULL 
+counts$sA.54=NULL
+
+#Removal of acute samples to test for the effect of parents/grandparents 
+counts <- counts[,!grepl("sAaB", colnames(counts))]
+counts <- counts[,!grepl("LBAtaB", colnames(counts))]
+colnames(counts)
+counts=counts[,order(names(counts))]
+countdata<-as.matrix(counts)
+
+#establishing the conditions 
+condition<-factor(c(rep('A',7), rep ('B',8), rep('LABt',6), rep('LABtdA', 8), rep('LBAt',6), rep('sA',7), rep('ttB',5))) #each treatment independently 
+coldata <-data.frame(row.names=colnames(countdata), condition)
+
+#to check out the counts
+totalCounts=colSums(countdata) 
+totalCounts
+min(totalCounts) #25905199
+max(totalCounts) #4342780
+mean(totalCounts) #33587837
+
+countData=counts
+
+#Establishing the conditions based on temperatures of the F1/F2, reproduction of F2 and development of F3
+colData <- data.frame(row.names= colnames(counts), condition= c("Control","Control","Control","Control","Control","Control","Control","Heat","Heat","Heat","Heat","Heat","Heat","Heat","Heat","Heat","Heat","Heat","Heat","Heat","Heat","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Control","Heat","Heat","Heat","Heat","Heat"), parents=c("Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp"), grandparents=c("Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp") )
+dds<-DESeqDataSetFromMatrix(countData=countData, colData=colData, design= ~condition + parents +grandparents)
+dds<-dds[rowSums(counts(dds))>0,]
+summary(dds)#28117
+
+#To see the effects of Parents + grandparents, removing development of F3
+dds.rep <- DESeq(dds, test="LRT",full=~condition+parents+grandparents, reduced=~condition)
+res.rep <-results(dds.rep)
+table(res.rep$padj<0.01)
+#FALSE  TRUE 
+#18684   107
+
+        #to obtain variance stabilized data folow: 
+        head(res.rep)
+        vsd.c=getVarianceStabilizedData(dds.rep)
+        head(vsd.c)
+        head(res.rep)
+        vals.c=cbind(res.rep$pvalue, res.rep$padj)
+        head(vals.c)
+        colnames(vals.c)=c("pval.c", "padj.c")
+        vsdpvals.c=cbind(vsd.c,vals.c)
+        head(vsdpvals.c)
+        write.csv(vsdpvals.c, "F3-project1_LRT_VSD-noacute_May8-parents-gp.csv", quote=F)
+
+        ###PCOA all samples
+        library(vegan)
+        library(rgl)
+        library(ape)
+        
+        dat=read.csv("F3-project1_LRT_VSD-noacute_May8.csv")
+        dat=dat[which(dat$padj.c<0.01),]
+        nrow(dat)#18
+        names(dat)
+        data=dat[,2:48]
+        row.names(data)=dat$X
+        
+        #### extracting experimental conditions 
+        traits=read.csv("f3-traits-grandparents-parents.csv",header=T) #include the names of each of the columns. Column 2 is species
+        conditions=c('black','black','black','black','black','black','black','black','black','black','black','black','black','black','black','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','dodgerblue','yellow2','yellow2','yellow2','yellow2','yellow2','yellow2','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1')
+        # principal coordinate calculation
+        dd.pcoa=pcoa(dist(t(data)))
+        scores=dd.pcoa$vectors
+        dd.pcoa 
+        
+        # plotting the first two principal axes
+        quartz()  
+        plot(scores[,1], scores[,2],col=conditions, pch=19, cex=2, main= "PCoA for all treatments", xlab='PC1=45.36%', ylab='PC2=19.33%')
+        legend("bottomleft", c("Control.Control",'Control.Heat', 'Heat.Control', 'Heat.Heat'), col=c("black","dodgerblue","yellow2", "firebrick1"), pch=c(19))
+
+## Effect of Parents and Grandparental development + F3 conditions
+dds.repc <- DESeq(dds, test="LRT",full=~condition+parents+grandparents, reduced=~parents)
+res.repc <-results(dds.repc)
+write.csv(res.repc, file="GP-F3dev-pairwise-LRT-table4GO.csv", quote=FALSE)
+table(res.repc$padj<0.01)
+#FALSE  TRUE 
+#14673   327 
+sigs<-res.repc[which(res.repc$padj<0.01),] #this command is only to write the table, use sig=which(res$padj<0.05) for heatmap
+write.csv(sigs, file='GP-F3dev-pairwise-LRT-sig-genes.csv')
+
+## F3 development + F2 reproductive temperature 
+dds.repx <- DESeq(dds, test="LRT",full=~condition+parents+grandparents, reduced=~grandparents)
+res.repx <-results(dds.repx)
+write.csv(res.repx, file="ParentsReprod-F3dev-pairwise-LRT-table4GO.csv", quote=FALSE)
+table(res.repx$padj<0.01)
+#FALSE  TRUE 
+#15187   355 
+sigs<-res.repxx[which(res.repxx$padj<0.01),] #this command is only to write the table, use sig=which(res$padj<0.05) for heatmap
+write.csv(sigs, file='ParentsReprod-F3dev-pairwise-LRT-sig-genes.csv')
+
+###Combined effect of parents+grandparents, removing effects of condition
+dds.repxx <- DESeq(dds, test="LRT",full=~condition+parents+grandparents, reduced=~condition)
+res.repxx <-results(dds.repxx)
+write.csv(res.repxx, file="ParentsPlusGP-pairwise-LRT-Jul18-table4GO.csv", quote=FALSE)
+table(res.repxx$padj<0.01)
+#FALSE  TRUE 
+#18773    18  
+sigs<-res.repxx[which(res.repxx$padj<0.01),] #this command is only to write the table, use sig=which(res$padj<0.05) for heatmap
+write.csv(sigs, file='Parents-plusGparents-LRT-Jul18.csv')
+
+###Effect of just Grandparental development
+dds.repx1 <- DESeq(dds, test="LRT",full=~condition+parents+grandparents, reduced=~condition+parents)
+res <-results(dds.repx1, contrast=c("grandparents","Controlgp","Heatgp"))
+write.csv(res, file="Grandparents-pairwise-heat-control-Jul18-table4GO.csv", quote=FALSE)
+table(res$padj<0.01)
+##  FALSE  TRUE 
+## 1401     2 
+sigs<-res[which(res$padj<0.01),] #this command is only to write the table, use sig=which(res$padj<0.05) for heatmap
+write.csv(sigs, file='Grandparents-pairwise-heat-control-sig-Jul18.csv')
+
+###Effect of just Parental development
+dds.repx2 <- DESeq(dds, test="LRT",full=~condition+parents+grandparents, reduced=~condition+grandparents)
+res <-results(dds.repx2, contrast=c("parents","Controlp","Heatp"))
+write.csv(res, file="Parents-pairwise-heat-control-Jul18-table4GO.csv", quote=FALSE)
+table(res$padj<0.01)
+##  FALSE  TRUE 
+## 18789     2
+sigs<-res[which(res$padj<0.01),] #this command is only to write the table, use sig=which(res$padj<0.05) for heatmap
+write.csv(sigs, file='Parents-pairwise-heat-control-sig-Dec2019.csv')
+
+
+###This is the effect of F3 development, removing grandparents/parents and parents reproduction
+#this was also used for the PCA in the MS 
+    dds<- DESeq(dds, test="LRT",full=~condition+parents+grandparents, reduced=~parents+grandparents)
+    res <-results(dds, contrast=c("condition","Control","Heat"))
+    write.csv(res, file="Conditions-pairwise-heat-control-pairwise-May18-table4GO.csv", quote=FALSE)
+    table(res$padj<0.01)
+    ##  FALSE  TRUE 
+    ##  15083   459  
+    sigs<-res[which(res$padj<0.01),] #this command is only to write the table, use sig=which(res$padj<0.05) for heatmap
+    write.csv(sigs, file='Conditions-pairwise-heat-control-sig-Jul18.csv')
+    
+    #to get variance stabilized data, and the corresponding table 
+    vsd=getVarianceStabilizedData(dds)
+    vsd=as.data.frame(vsd)
+    vsd.sub=vsd[c("A.108","A.109","A.110","A.117","A.126","A.136","A.18","B.127","B.133","B.213","B.214","B.215","B.216","B.217","B.219","LABt.119","LABt.121","LABt.128","LABt.130","LABt.134","LABt.135","LABtdA.111","LABtdA.13","LABtdA.14","LABtdA.141","LABtdA.142","LABtdA.143","LABtdA.144","LABtdA1.24","LBAt.113","LBAt.137","LBAt.138","LBAt.139","LBAt.140","LBAt.160","sA.114","sA.115","sA.16","sA.21","sA.53","sA.97","sA.98","ttB.118","ttB.129","ttB.175","ttB.176","ttB.177")]
+    head(vsd.sub)
+    head(res)
+    vals=cbind(res$pvalue, res$padj)
+    head(vals)
+    colnames(vals)=c("pval.c", "padj.c")
+    vsdpvals.c=cbind(vsd.sub,vals)
+    head(vsdpvals.c)
+    write.csv(vsdpvals.c, "Conditions-heat-control-pairwise_VSDandPVALS-jul2018.csv", quote=F)
+    
+    ###PCOA all samples
+    library(vegan)
+    library(rgl)
+    library(ape)
+    
+    dat=read.csv("Conditions-heat-control-pairwise_VSDandPVALS-jul2018.csv", header=T)
+    dat=dat[which(dat$padj<0.01),]
+    nrow(dat)
+    names(dat)
+    data=dat[,2:48]
+    row.names(data)=dat$X
+    
+    #### extracting experimental conditions 
+    traits=read.csv("f3-traits-F3conditions.csv",header=T) #include the names of each of the columns. Column 2 is species
+    conditions=c('black','black','black','black','black','black','black','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1','black','black','black','black','black','black','black','black','black','black','black','black','black','black','black','black','black','black','black','black','black','firebrick1','firebrick1','firebrick1','firebrick1','firebrick1')
+    # principal coordinate calculation
+    dd.pcoa=pcoa(dist(t(data)))
+    scores=dd.pcoa$vectors
+    dd.pcoa 
+    scores[,2]
+    
+    # plotting the first two principal axes
+    quartz()  
+    plot(scores[,1], scores[,2],col=conditions, pch=19, cex=2, main= "PCoA for all treatments", xlab='PC1=33.81%', ylab='PC2=20.58%')
+    legend("bottomright", c("Control",'Heat'), col=c("blue4","orange2"), pch=c(19))
+    
+ 
+##Other exploratory comparisons, not used in the MS. 
+
+##to see the effect of just parents + grandparents (THESE ARE ALL OVERESTIMATED BECAUSE EFFECT OF CONDITION NOT INCLUDED - BE CAREFUL)
+colData <- data.frame(row.names= colnames(counts), grandparents=c("Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Controlgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp","Heatgp"), parents=c("Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Controlp","Controlp","Controlp","Controlp","Controlp","Controlp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp","Heatp"))
+dds<-DESeqDataSetFromMatrix(countData=countData, colData=colData, design= ~grandparents + parents )
+dds<-dds[rowSums(counts(dds))>0,]
+summary(dds)#28117
+dds.pgp <- DESeq(dds, test="LRT",full=~grandparents+parents, reduced=~parents)
+res.pgp <-results(dds.pgp)
+table(res.pgp$padj<0.01)
+#FALSE  TRUE 
+#19866     5
+
+dds.px <- DESeq(dds, test="LRT",full=~grandparents+parents, reduced=~grandparents)
+res.px <-results(dds.px)
+table(res.px$padj<0.01)
+#FALSE  TRUE 
+#28029     2 
+
+#interaction parents*grandparents
+dds<-DESeqDataSetFromMatrix(countData=countData, colData=colData, design= ~grandparents*parents )
+dds<-dds[rowSums(counts(dds))>0,]
+dds.px2 <- DESeq(dds, test="LRT",full=~grandparents*parents, reduced=~grandparents+parents)
+res.px2 <-results(dds.px2)
+table(res.px2$padj<0.01)
+#FALSE TRUE 
+#17606  99
+
+dds.px3 <- DESeq(dds, test="LRT",full=~grandparents*parents, reduced=~parents) #DEG because of interaction without the effect of parents 
+res.px3 <-results(dds.px3)
+table(res.px3$padj<0.01)
+#FALSE TRUE 
+#17054  110
+
+dds.px4 <- DESeq(dds, test="LRT",full=~grandparents*parents, reduced=~grandparents) #DEG because of interaction without the effect of parents 
+res.px4 <-results(dds.px4)
+table(res.px4$padj<0.01)
+#FALSE  TRUE 
+#16544    79 
