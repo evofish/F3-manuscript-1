@@ -1,0 +1,341 @@
+---
+title: "F3 TGP"
+author: "Jenni D"
+date: "Sept 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(Rcpp)
+library(ggplot2)
+library(glue)
+library(tidyverse)
+library(car)
+library(MuMIn)
+library(nlme)
+library(ggfortify)
+library(MASS)
+library(effects)
+library(broom)
+library(lme4)
+library(emmeans)
+library(nlme)
+library(multcompView)
+library(multcomp)
+library(plyr)
+library(gmodels)
+```
+
+
+
+```{r}
+setwd("C:/Users/jc130714/OneDrive - James Cook University/Documents/Kaust grant/Moises/F3 Moises/R processing")
+getwd()
+F3TGP = read.csv('F3 TGP.csv', strip.white=TRUE)
+
+str(F3TGP)
+F3TGP$GP = factor(F3TGP$GP)
+F3TGP$PT = factor(F3TGP$PT)
+F3TGP$DT = factor(F3TGP$DT)
+F3TGP$Parental.ID = factor(F3TGP$Parental.ID)
+str(F3TGP)
+
+```
+
+##Routine oxygen consumption
+
+```{r}
+qqnorm(F3TGP$logRMR)
+qqline(F3TGP$logRMR, col = "red", lwd = 2)
+```
+
+
+```{r}
+hist(F3TGP$RMR)
+hist(F3TGP$logRMR)
+```
+
+
+
+
+
+```{r}
+
+lmer.RMR = lmer(logRMR ~ GP + PT + DT + GP:PT + GP:DT + PT:DT + GP:PT:DT + logWeight + (1|Parental.ID), data = F3TGP)
+summary(lmer.RMR)
+Anova(lmer.RMR)
+
+```
+
+```{r}
+plot(fitted(lmer.RMR ), resid(lmer.RMR ), col = "dodgerblue",
+     pch = 20, cex = 1.5, xlab = "Fitted", ylab = "Residuals")
+abline(h = 0, lty = 2, col = "darkorange", lwd = 2)
+```
+```{r}
+shapiro.test(resid(lmer.RMR))
+```
+
+
+```{r}
+RMRemmeans = emmeans(lmer.RMR, ~ GP:PT:DT)
+RMRemmeans
+```
+
+```{r}
+
+cmat = list (G1vsG2 =          c(0.5, -0.5, 0.5, -0.5, 0, 0, 0,  0),
+P1vsP2 =          c(0.5, 0.5, -0.5, -0.5, 0, 0, 0,  0),
+InteractionGP =   c(0.5, -0.5, -0.5, 0.5, 0, 0, 0,  0),
+D1vsD2all =          c(1/3, 0, 1/3, 1/3, -1/3, 0, -1/3,  -1/3),
+InteractionPD12 =   c(0.5, 0, -0.5, 0, -0.5, 0, 0.5,  0),
+InteractionPD23 =   c(0, 0, 0.5, -0.5, 0, 0, -0.5,  0.5))
+
+
+contrast(RMRemmeans, cmat, adjust = "none")
+
+```
+
+
+
+
+
+
+
+
+#Maximum oxygen consumption 
+
+
+```{r}
+qqnorm(F3TGP$logMMR)
+qqline(F3TGP$logMMR, col = "red", lwd = 2)
+```
+
+```{r}
+hist(F3TGP$logMMR)
+```
+
+```{r}
+
+lmer.MMR = lmer(logMMR ~ GP + PT + DT + GP:PT + GP:DT + PT:DT + GP:PT:DT + logWeight+ (1|Parental.ID), data = F3TGP)
+summary(lmer.MMR)
+Anova(lmer.MMR)
+
+```
+
+```{r}
+plot(fitted(lmer.MMR ), resid(lmer.MMR ), col = "dodgerblue",
+     pch = 20, cex = 1.5, xlab = "Fitted", ylab = "Residuals")
+abline(h = 0, lty = 2, col = "darkorange", lwd = 2)
+```
+
+```{r}
+shapiro.test(resid(lmer.MMR))
+```
+
+```{r}
+MMRemmeans = emmeans(lmer.MMR, ~ GP:PT:DT)
+MMRemmeans
+```
+
+```{r}
+
+cmat = list (G1vsG2 =          c(0.5, -0.5, 0.5, -0.5, 0, 0, 0,  0),
+P1vsP2 =          c(0.5, 0.5, -0.5, -0.5, 0, 0, 0,  0),
+InteractionGP =   c(0.5, -0.5, -0.5, 0.5, 0, 0, 0,  0),
+D1vsD2all =          c(1/3, 0, 1/3, 1/3, -1/3, 0, -1/3,  -1/3),
+InteractionPD12 =   c(0.5, 0, -0.5, 0, -0.5, 0, 0.5,  0),
+InteractionPD23 =   c(0, 0, 0.5, -0.5, 0, 0, -0.5,  0.5))
+
+
+contrast(MMRemmeans, cmat, adjust = "none")
+
+```
+
+
+
+
+##Net scope
+
+```{r}
+qqnorm(F3TGP$logNSkg)
+qqline(F3TGP$logNSkg, col = "red", lwd = 2)
+```
+
+```{r}
+hist(F3TGP$logNSkg)
+```
+
+
+```{r}
+lmer.NS = lmer(logNSkg ~ GP + PT + DT + GP:PT + GP:DT + PT:DT + GP:PT:DT + logWeight + (1|Parental.ID), data = F3TGP)
+summary(lmer.NS)
+Anova(lmer.NS)
+```
+
+```{r}
+plot(fitted(lmer.NS), resid(lmer.NS), col = "dodgerblue",
+     pch = 20, cex = 1.5, xlab = "Fitted", ylab = "Residuals")
+abline(h = 0, lty = 2, col = "darkorange", lwd = 2)
+```
+
+```{r}
+shapiro.test(resid(lmer.NS))
+```
+
+```{r}
+NSemmeans = emmeans(lmer.NS, ~ GP:PT:DT )
+NSemmeans
+```
+
+```{r}
+
+cmat = list (G1vsG2 =          c(0.5, -0.5, 0.5, -0.5, 0, 0, 0,  0),
+P1vsP2 =          c(0.5, 0.5, -0.5, -0.5, 0, 0, 0,  0),
+InteractionGP =   c(0.5, -0.5, -0.5, 0.5, 0, 0, 0,  0),
+D1vsD2all =          c(1/3, 0, 1/3, 1/3, -1/3, 0, -1/3,  -1/3),
+InteractionPD12 =   c(0.5, 0, -0.5, 0, -0.5, 0, 0.5,  0),
+InteractionPD23 =   c(0, 0, 0.5, -0.5, 0, 0, -0.5,  0.5))
+
+
+contrast(NSemmeans, cmat, adjust = "none")
+
+```
+
+
+
+
+
+
+
+
+##Physical attributes
+#Hepatospomstic index HSI
+
+```{r}
+F3TGP = read.csv('F3 TGP Phy.csv', strip.white=TRUE)
+head(F3TGP)
+
+str(F3TGP)
+F3TGP$GP = factor(F3TGP$GP)
+F3TGP$PT = factor(F3TGP$PT)
+F3TGP$DT = factor(F3TGP$DT)
+F3TGP$H.code = factor(F3TGP$H.code)
+F3TGP$Parent.ID = factor(F3TGP$Parent.ID)
+str(F3TGP)
+
+```
+
+
+```{r}
+qqnorm(F3TGP$HSI)
+qqline(F3TGP$HSI, col = "red", lwd = 2)
+```
+
+```{r}
+hist(F3TGP$HSI)
+```
+
+```{r}
+lmer.HSI = lmer(HSI ~ GP + PT + DT + GP:PT + GP:DT + PT:DT + GP:PT:DT + (1|Parent.ID), data = F3TGP)
+summary(lmer.HSI)
+Anova(lmer.HSI)
+```
+
+```{r}
+plot(fitted(lmer.HSI), resid(lmer.HSI), col = "dodgerblue",
+     pch = 20, cex = 1.5, xlab = "Fitted", ylab = "Residuals")
+abline(h = 0, lty = 2, col = "darkorange", lwd = 2)
+```
+
+```{r}
+shapiro.test(resid(lmer.HSI))
+```
+
+```{r}
+HSIemmeans = emmeans(lmer.HSI, ~ GP:PT:DT )
+HSIemmeans
+```
+
+```{r}
+
+cmat = list (G1vsG2 =          c(0.5, -0.5, 0.5, -0.5, 0, 0, 0,  0),
+P1vsP2 =          c(0.5, 0.5, -0.5, -0.5, 0, 0, 0,  0),
+InteractionGP =   c(0.5, -0.5, -0.5, 0.5, 0, 0, 0,  0),
+D1vsD2all =          c(1/3, 0, 1/3, 1/3, -1/3, 0, -1/3,  -1/3),
+InteractionPD12 =   c(0.5, 0, -0.5, 0, -0.5, 0, 0.5,  0),
+InteractionPD23 =   c(0, 0, 0.5, -0.5, 0, 0, -0.5,  0.5))
+
+
+contrast(HSIemmeans, cmat, adjust = "none")
+
+```
+
+
+
+
+
+
+
+
+
+#Condition: Weight for a given standard length
+
+```{r}
+qqnorm(F3TGP$Weight..g.)
+qqline(F3TGP$Weight..g., col = "red", lwd = 2)
+```
+
+```{r}
+hist(F3TGP$Weight..g.)
+```
+
+```{r}
+lmer.WSL = lmer(Weight..g.  ~ GP + PT + DT + GP:PT + GP:DT + PT:DT + GP:PT:DT + Standard.Length..mm. +(1|Parent.ID) , data = F3TGP)
+summary(lmer.WSL)
+Anova(lmer.WSL)
+```
+
+```{r}
+plot(fitted(lmer.WSL), resid(lmer.WSL), col = "dodgerblue",
+     pch = 20, cex = 1.5, xlab = "Fitted", ylab = "Residuals")
+abline(h = 0, lty = 2, col = "darkorange", lwd = 2)
+```
+
+```{r}
+shapiro.test(resid(lmer.WSL))
+```
+
+```{r}
+WSLemmeans = emmeans(lmer.WSL, ~ GP:PT:DT )
+WSLemmeans
+```
+
+```{r}
+
+cmat = list (G1vsG2 =          c(0.5, -0.5, 0.5, -0.5, 0, 0, 0,  0),
+P1vsP2 =          c(0.5, 0.5, -0.5, -0.5, 0, 0, 0,  0),
+InteractionGP =   c(0.5, -0.5, -0.5, 0.5, 0, 0, 0,  0),
+D1vsD2all =          c(1/3, 0, 1/3, 1/3, -1/3, 0, -1/3,  -1/3),
+InteractionPD12 =   c(0.5, 0, -0.5, 0, -0.5, 0, 0.5,  0),
+InteractionPD23 =   c(0, 0, 0.5, -0.5, 0, 0, -0.5,  0.5))
+
+
+contrast(WSLemmeans, cmat, adjust = "none")
+
+```
+
+
+```{r}
+sessionInfo()
+```
